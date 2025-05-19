@@ -1,14 +1,28 @@
 #include "Sender.hpp"
 #include <iostream>
+#include <chrono>
+#include <thread>
 
 int main(int argc, char* argv[]) {
-    if (argc < 2) {
-        std::cerr << "Usage: SenderMain <filename>\n";
+    if (argc < 3) {
+        std::cerr << "Usage: SenderMain <filename> <senderIndex>\n";
         return 1;
     }
+
     std::string filename = argv[1];
+    int senderIndex = std::stoi(argv[2]);
 
     Sender sender(filename);
+
+    std::string eventName = "Global\\SenderReadyEvent_" + std::to_string(senderIndex);
+    HANDLE evt = OpenEventA(EVENT_MODIFY_STATE, FALSE, eventName.c_str());
+    if (evt) {
+        SetEvent(evt);
+        CloseHandle(evt);
+    }
+    else {
+        std::cerr << "Failed to signal readiness.\n";
+    }
 
     while (true) {
         std::cout << "Enter command (send/exit): ";
