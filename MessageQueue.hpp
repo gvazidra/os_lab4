@@ -4,8 +4,10 @@
 #include <fstream>
 #include <vector>
 #include <string>
+#include <windows.h>
 
 const int MESSAGE_SIZE = 20;
+constexpr auto MUTEX_NAME = "Global\\MessageQueueMutex";
 
 struct QueueHeader {
     int head;
@@ -16,9 +18,21 @@ struct QueueHeader {
 class MessageQueue {
 public:
     explicit MessageQueue(const std::string& filename)
-        : filename_(filename) {}
+        : filename_(filename) {
+        mutex_ = CreateMutexA(NULL, FALSE, MUTEX_NAME);
+        if (mutex_ == NULL) {
+            throw std::runtime_error("Failed to create or open mutex");
+        }
+    }
+
+    ~MessageQueue() {
+        if (mutex_ != NULL) {
+            CloseHandle(mutex_);
+        }
+    }
 
     void init(int numRecords) {
+        WaitForSingleObject(mutex_, INFINITE);
         std::ofstream ofs(filename_, std::ios::binary | std::ios::trunc);
         QueueHeader header = { 0, 0, numRecords };
         ofs.write(reinterpret_cast<const char*>(&header), sizeof(header));
@@ -27,9 +41,11 @@ public:
             ofs.write(empty.data(), MESSAGE_SIZE);
         }
         ofs.close();
+        ReleaseMutex(mutex_);
     }
 
     bool push(const std::string& message) {
+        WaitForSingleObject(mutex_, INFINITE);
         std::fstream fs(filename_, std::ios::binary | std::ios::in | std::ios::out);
         QueueHeader header;
         fs.read(reinterpret_cast<char*>(&header), sizeof(header));
@@ -37,6 +53,7 @@ public:
         int nextTail = (header.tail + 1) % header.capacity;
         if (nextTail == header.head) {
             fs.close();
+            ReleaseMutex(mutex_);
             return false;
         }
 
@@ -51,16 +68,19 @@ public:
         fs.seekp(0);
         fs.write(reinterpret_cast<const char*>(&header), sizeof(header));
         fs.close();
+        ReleaseMutex(mutex_);
         return true;
     }
 
     std::pair<bool, std::string> pop() {
+        WaitForSingleObject(mutex_, INFINITE);
         std::fstream fs(filename_, std::ios::binary | std::ios::in | std::ios::out);
         QueueHeader header;
         fs.read(reinterpret_cast<char*>(&header), sizeof(header));
 
         if (header.head == header.tail) {
             fs.close();
+            ReleaseMutex(mutex_);
             return { false, "" };
         }
 
@@ -72,11 +92,13 @@ public:
         fs.seekp(0);
         fs.write(reinterpret_cast<const char*>(&header), sizeof(header));
         fs.close();
+        ReleaseMutex(mutex_);
         return { true, std::string(buffer) };
     }
 
 private:
     std::string filename_;
+    HANDLE mutex_;
 };
 
 #endif
