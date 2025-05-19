@@ -1,4 +1,4 @@
-﻿#include "Receiver.hpp"
+#include "Receiver.hpp"
 #include <iostream>
 #include <windows.h>
 
@@ -13,12 +13,23 @@ int main() {
     std::cout << "Enter number of Sender processes: ";
     std::cin >> numSenders;
 
+    std::vector<HANDLE> readyEvents;
+
+    for (int i = 0; i < numSenders; ++i) {
+        std::string eventName = "Global\\SenderReadyEvent_" + std::to_string(i);
+        HANDLE evt = CreateEventA(NULL, TRUE, FALSE, eventName.c_str());
+        if (!evt) {
+            std::cerr << "Failed to create event: " << eventName << "\n";
+        }
+        readyEvents.push_back(evt);
+    }
+
     Receiver receiver(filename, numRecords);
 
     for (int i = 0; i < numSenders; ++i) {
         STARTUPINFOA si = { sizeof(STARTUPINFOA) };
         PROCESS_INFORMATION pi;
-        std::string command = "SenderMain.exe " + filename;
+        std::string command = "SenderMain.exe " + filename + " " + std::to_string(i);
 
         if (!CreateProcessA(
             NULL,
@@ -40,6 +51,10 @@ int main() {
         }
     }
 
+    std::cout << "Waiting for all Senders to be ready...\n";
+    WaitForMultipleObjects(readyEvents.size(), readyEvents.data(), TRUE, INFINITE);
+    std::cout << "All Senders are ready.\n";
+
     while (true) {
         std::cout << "Enter command (read/exit): ";
         std::string cmd;
@@ -57,5 +72,10 @@ int main() {
             break;
         }
     }
+
+    for (HANDLE evt : readyEvents) {
+        CloseHandle(evt);
+    }
+
     return 0;
 }
